@@ -1,14 +1,16 @@
 const axios = require('axios');
 const Dev = require('../models/Dev');
 const parseStringAsArray = require('../utils/parseStringAsArray');
+const { findConnections, sendMessage } = require('../websocket');
 
-module.exports  = {
+module.exports = {
   async index(request, response) {
     const devs = await Dev.find();
 
     return response.json(devs);
   },
-  async store(request, response)  {
+  
+  async store(request, response) {
     const { github_username, techs, latitude, longitude } = request.body;
 
     let dev = await Dev.findOne({ github_username });
@@ -17,25 +19,34 @@ module.exports  = {
       const apiResponse = await axios.get(`https://api.github.com/users/${github_username}`);
   
       const { name = login, avatar_url, bio } = apiResponse.data;
-   
-      //Percorre a string enviada no request.body, pega cada string
-      // separado por virgulas e retira os espaços em branco e monta um array
-      const techArray = parseStringAsArray(techs);
-  
+    
+      const techsArray = parseStringAsArray(techs);
+    
       const location = {
         type: 'Point',
-        coordinates: [longitude, latitude]
+        coordinates: [longitude, latitude],
       };
-  
+    
       dev = await Dev.create({
         github_username,
         name,
         avatar_url,
         bio,
-        techs: techArray,
+        techs: techsArray,
         location,
       })
+
+      // Filtrar as conexões que estão há no máximo 10km de distância
+      // e que o novo dev tenha pelo menos uma das tecnologias filtradas
+
+      const sendSocketMessageTo = findConnections(
+        { latitude, longitude },
+        techsArray,
+      )
+
+      sendMessage(sendSocketMessageTo, 'new-dev', dev);
     }
-    return response.json(dev); 
-  }  
+  
+    return response.json(dev);
+  },
 };
